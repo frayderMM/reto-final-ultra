@@ -29,7 +29,7 @@ Tópicos:
     pub  /pare_detectado       (std_msgs/Bool)   — ROJO (PARE) confirmado, centrado
     pub  /verde_detectado      (std_msgs/Bool)   — VERDE opaco confirmado, centrado
     pub  /amarillo_detectado   (std_msgs/Bool)   — AMARILLO confirmado
-    pub  /beep                 (std_msgs/UInt16) — secuencia 300, 900 al ver rojo/amarillo
+    pub  /beep                 (std_msgs/UInt16) — secuencia "pi pi piiiiiii" al ver rojo/amarillo
     pub  /pare/area            (std_msgs/Float32) — área del blob rojo (debug/tuning)
     pub  /pare/debug_image     (sensor_msgs/Image) — overlay rojo+verde para captura
 """
@@ -139,6 +139,7 @@ class PareDetector(Node):
         self._rojo_anterior = False
         self._amarillo_anterior = False
         self._beep_timer = None
+        self._beep_paso = 0
 
         self.create_subscription(Image, self.topic_camera, self.on_image, 10)
         self.create_subscription(Bool, '/maze/atencion_pare', self.on_atencion, 10)
@@ -218,9 +219,8 @@ class PareDetector(Node):
         self.pub_area.publish(Float32(
             data=float(mejor_r['area']) if mejor_r else 0.0))
 
-        # Equivale a:
-        # pub /beep 300; espera 0.12 s; pub /beep 900.
-        # Se dispara una sola vez al comenzar cada detección, no por frame.
+        # Secuencia "pi pi piiiiiii" (ver _disparar_beep_paso). Se dispara
+        # una sola vez al comenzar cada detección, no por frame.
         if ((conf_r and not self._rojo_anterior) or
                 (conf_a and not self._amarillo_anterior)):
             self._iniciar_beep()
@@ -259,19 +259,28 @@ class PareDetector(Node):
         hi = np.array([self.amarillo_h_max, 255, 255], dtype=np.uint8)
         return self._limpiar(cv2.inRange(hsv, lo, hi))
 
-    def _iniciar_beep(self):
-        """Publica los dos tonos sin bloquear el procesamiento de cámara."""
-        self.pub_beep.publish(UInt16(data=300))
-        if self._beep_timer is not None:
-            self._beep_timer.cancel()
-        self._beep_timer = self.create_timer(0.12, self._terminar_beep)
+    # "pi pi piiiiiii": dos pitidos cortos + uno largo. Cada valor es la
+    # duracion (ms) de un one-shot del buzzer (se apaga solo); la pausa
+    # entre pasos es mayor que el pitido corto para que quede un silencio
+    # audible entre "pi" y "pi" antes del pitido largo final.
+    _BEEP_DURACIONES_MS = (120, 120, 900)
+    _BEEP_PAUSA_S = 0.27
 
-    def _terminar_beep(self):
-        self.pub_beep.publish(UInt16(data=900))
+    def _iniciar_beep(self):
+        """Dispara la secuencia sin bloquear el procesamiento de cámara."""
+        self._beep_paso = 0
+        self._disparar_beep_paso()
+
+    def _disparar_beep_paso(self):
+        self.pub_beep.publish(UInt16(data=self._BEEP_DURACIONES_MS[self._beep_paso]))
         if self._beep_timer is not None:
             self._beep_timer.cancel()
             self.destroy_timer(self._beep_timer)
             self._beep_timer = None
+        self._beep_paso += 1
+        if self._beep_paso < len(self._BEEP_DURACIONES_MS):
+            self._beep_timer = self.create_timer(
+                self._BEEP_PAUSA_S, self._disparar_beep_paso)
 
     @staticmethod
     def _quitar_componentes_pequenos(mask, area_min):
