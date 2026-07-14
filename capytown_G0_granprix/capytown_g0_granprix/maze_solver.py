@@ -235,7 +235,7 @@ class MazeSolverNode(Node):
             # right_front_window_deg): detecta que el lado seguido se abre
             # ANTES de que el costado del robot llegue al hueco (regla 0 de
             # deteccion temprana en _handle_avanzar_paralelo_dos_reglas).
-            'left_front_window_deg': [55.0, 80.0],
+            'left_front_window_deg': [65.0, 85.0],
             'right_side_window_deg': [-110.0, -70.0],
             'left_side_window_deg': [70.0, 110.0],
             'min_puntos_linea': 6,
