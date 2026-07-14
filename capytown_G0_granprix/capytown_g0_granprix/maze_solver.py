@@ -294,9 +294,9 @@ class MazeSolverNode(Node):
             # de distancia (el que corrige que tan pegado va a la pared
             # seguida) y algo mas en angulo; angular_max sube junto para
             # que la correccion mas fuerte no se sature de inmediato.
-            'ganancia_angulo_recta': 2.5,
-            'ganancia_distancia_recta': 3.5,
-            'angular_max_recta_radps': 0.7,
+            'ganancia_angulo_recta': 2.0,
+            'ganancia_distancia_recta': 2.0,
+            'angular_max_recta_radps': 0.6,
             # Confirmacion de N ciclos seguidos con front_narrow
             # bloqueado antes de girar -- un solo vistazo diagonal de un
             # ciclo (100% ruido/transitorio) no alcanza para disparar un
@@ -310,7 +310,7 @@ class MazeSolverNode(Node):
             # (PAUSA_CHEQUEO_PARED) tiempo_chequeo_pared_s y verifica
             # con distancia PUNTUAL (no la linea) si el lado seguido
             # esta ocupado o vacio.
-            'distancia_chequeo_pared_m': 0.20,
+            'distancia_chequeo_pared_m': 0.12,
             'tiempo_chequeo_pared_s': 0.5,
             # "Lado derecho vacio" tiene que sostenerse esta cantidad
             # de ciclos SEGUIDOS (no una sola lectura) antes de

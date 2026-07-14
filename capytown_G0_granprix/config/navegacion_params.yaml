@@ -37,11 +37,11 @@ maze_solver:
     velocidad_recta_mps: 0.15
     distancia_objetivo_m: 0.12
     # Correccion lateral mas estricta (ver comentario en maze_solver.py).
-    ganancia_angulo_recta: 2.5
-    ganancia_distancia_recta: 3.5
-    angular_max_recta_radps: 0.7
+    ganancia_angulo_recta: 2.0
+    ganancia_distancia_recta: 2.0
+    angular_max_recta_radps: 0.6
     frente_confirmaciones_ciclos: 3
-    distancia_chequeo_pared_m: 0.20
+    distancia_chequeo_pared_m: 0.12
     tiempo_chequeo_pared_s: 0.5
     chequeo_pared_confirmaciones_ciclos: 5
     avance_giro_vacio_m: 0.12
