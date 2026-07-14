@@ -146,6 +146,7 @@ class VisualizadorWeb(Node):
         self.lock = threading.Lock()
         self.estado = 'INICIO'
         self.tramo = 0
+        self.giros_fisicos = 0
         self.odom_cm = 0.0
         self.lidar = []                 # [[x,y], ...] marco robot
         self._lidar_full = []           # puntos 360 para anclar inicio
@@ -609,6 +610,9 @@ class VisualizadorWeb(Node):
             self.d_lado_trasera = dlt if (dlt is not None and math.isfinite(dlt)) else self.d_lado_trasera
             self.v_cmd = float(v_cmd) if v_cmd is not None and math.isfinite(v_cmd) else self.v_cmd
             self.w_cmd = float(w_cmd) if w_cmd is not None and math.isfinite(w_cmd) else self.w_cmd
+            giros = d.get('giros_fisicos')
+            if giros is not None:
+                self.giros_fisicos = int(giros)
 
     def cb_ruta(self, msg: String):
         """Ruta corta calculada por maze_solver (fase 2). Solo se reenvia por
@@ -665,6 +669,7 @@ class VisualizadorWeb(Node):
                 movimiento = self.estado
             return {
                 'estado': self.estado, 'tramo': self.tramo,
+                'giros_fisicos': self.giros_fisicos,
                 'odom_cm': round(self.odom_cm, 1),
                 'lidar': self.lidar,
                 'd_frente': self.d_frente,

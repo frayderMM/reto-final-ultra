@@ -147,6 +147,24 @@ class MazeSolverNode(Node):
         self._correccion_signo = 1.0
         self._yaw_correccion0 = 0.0
 
+        # --- Metricas Gran Prix (para metrics_logger.py via /maze/metricas) ---
+        # metrics_logger.py escucha este mismo topico esperando estos campos
+        # ademas de los de telemetria de visualizador_web -- se agregan aca
+        # sin tocar la logica de manejo. Se congelan en un snapshot al
+        # llegar a META (ver _on_verde) para que tiempo_s/long_ruta_cm
+        # reflejen el trayecto INICIO->META y no seguir sumando si el
+        # carrito continua dando la vuelta al laberinto despues de verla.
+        self._tiempo_inicio = None
+        self._distancia_total_m = 0.0
+        self._odom_prev_xy = None
+        self._contador_colisiones = 0
+        self._contador_pare_detectados = 0
+        self._contador_pare_respetados = 0
+        self._metricas_meta = None
+        # Contador de giros fisicos de 90 reales -- ver nota junto a
+        # 'giros_fisicos' en _publish_twist.
+        self._contador_giros_fisicos = 0
+
         self._STATE_HANDLERS = {
             'INICIAR': self._handle_iniciar,
             'AVANZAR_PARALELO': self._handle_avanzar_paralelo,
@@ -538,6 +556,14 @@ class MazeSolverNode(Node):
         self._yaw = yaw_from_quaternion(msg.pose.pose.orientation) * self._factor_ang_odom
         self._odom_ready = True
 
+        # long_ruta_cm (metrica Gran Prix): odometro acumulado sin importar
+        # el estado -- mismo patron que visualizador_web.odom_cm.
+        if self._odom_prev_xy is not None:
+            dx = self._odom_x - self._odom_prev_xy[0]
+            dy = self._odom_y - self._odom_prev_xy[1]
+            self._distancia_total_m += math.hypot(dx, dy)
+        self._odom_prev_xy = (self._odom_x, self._odom_y)
+
     def _on_pare(self, msg: Bool):
         detectado = bool(msg.data)
         en_cooldown = False
@@ -563,6 +589,7 @@ class MazeSolverNode(Node):
                 )
             else:
                 self._pare_pendiente = True
+                self._contador_pare_detectados += 1
         self._pare_activo = detectado
         self._pare_anterior = detectado
 
@@ -579,6 +606,11 @@ class MazeSolverNode(Node):
         if (activo and not self._verde_anterior and self._ruta_activa
                 and self._explorer is not None and self._meta_cell is None):
             self._meta_cell = self._explorer.cell
+            # Congela tiempo_s/long_ruta_cm aca (INICIO->META): si el
+            # carrito sigue dando la vuelta al laberinto despues de ver el
+            # verde (logica_dos_reglas no se detiene sola), esos dos campos
+            # no deben seguir creciendo con ese recorrido extra.
+            self._metricas_meta = self._metricas_actuales()
             self._publish_event(
                 EV.META, f'meta (verde) registrada en celda {self._meta_cell}'
             )
@@ -660,6 +692,7 @@ class MazeSolverNode(Node):
             self._pare_pendiente = False
             self._pare_ignorar_xy = (self._odom_x, self._odom_y)
             self._celdas_pare_respetadas.add(self._grid.cell)
+            self._contador_pare_respetados += 1
             self._publish_event(
                 EV.PARE_RESPETADO,
                 f'PARE respetado {elapsed:.1f}s; continúa en {self._state}',
@@ -758,6 +791,7 @@ class MazeSolverNode(Node):
 
         if frente_bloqueado:
             d_frente = z.front if z.front_valid else z.front_narrow
+            self._contador_colisiones += 1
             self._publish_event(
                 EV.COLISION,
                 f'obstaculo a {d_frente:.2f} m cerca de {self._grid.cell}; '
@@ -858,6 +892,7 @@ class MazeSolverNode(Node):
         self._publish_event(
             EV.INICIO, f'inicio en {self._grid.cell}, heading {self._grid.heading}'
         )
+        self._tiempo_inicio = self.get_clock().now()
         self._begin_avanzar_paralelo()
         self._set_state('AVANZAR_PARALELO')
 
@@ -1059,6 +1094,7 @@ class MazeSolverNode(Node):
             self._yaw_inicio_giro = self._yaw
             self._giro_vacio_fase = 1
             self._giro_vacio_repeticiones = 0
+            self._contador_giros_fisicos += 1
             self._publish_event(
                 EV.GIRO, f'lado seguido vacio ({self._lado_distancia(z):.2f}m) -> {self._decision_actual}'
             )
@@ -1071,6 +1107,7 @@ class MazeSolverNode(Node):
             self._decision_actual = self._direccion_obstaculo()
             self._yaw_inicio_giro = self._yaw
             self._giro_vacio_fase = 0
+            self._contador_giros_fisicos += 1
             self._publish_event(
                 EV.GIRO, f'lado seguido ocupado, frente bloqueado -> {self._decision_actual}'
             )
@@ -1303,6 +1340,7 @@ class MazeSolverNode(Node):
         if lado_libre and self._giro_vacio_repeticiones < self._giro_vacio_max_repeticiones:
             self._giro_vacio_repeticiones += 1
             self._yaw_inicio_giro = self._yaw
+            self._contador_giros_fisicos += 1
             self._publish_event(
                 EV.GIRO,
                 f'avanzo {avance:.2f}m, lado seguido sigue vacio '
@@ -1523,6 +1561,24 @@ class MazeSolverNode(Node):
     # ------------------------------------------------------------------
     # Utilidades de publicacion
     # ------------------------------------------------------------------
+    def _metricas_actuales(self) -> dict:
+        """Campos Gran Prix que espera metrics_logger.py (dead_ends_visitados
+        no se calcula aca -- sin una nocion clara de "callejon sin salida"
+        en logica_dos_reglas, se deja el default 0 de metrics_logger antes
+        que inventar un numero)."""
+        if self._tiempo_inicio is not None:
+            tiempo_s = (self.get_clock().now() - self._tiempo_inicio).nanoseconds / 1e9
+        else:
+            tiempo_s = 0.0
+        return {
+            'llego_meta': self._meta_cell is not None,
+            'tiempo_s': round(tiempo_s, 1),
+            'long_ruta_cm': round(self._distancia_total_m * 100.0, 1),
+            'colisiones': self._contador_colisiones,
+            'pare_detectados': self._contador_pare_detectados,
+            'pare_respetados': self._contador_pare_respetados,
+        }
+
     def _publish_twist(self, cmd: Twist):
         self._cmd_pub.publish(cmd)
         z = self._zones
@@ -1531,7 +1587,7 @@ class MazeSolverNode(Node):
             followed_valid = z.left_line_valid if self._seguir_izquierda else z.right_line_valid
             rear = z.left if self._seguir_izquierda else z.right
             rear_valid = z.left_valid if self._seguir_izquierda else z.right_valid
-            self._metrics_pub.publish(String(data=json.dumps({
+            payload = {
                 'estado': self._state,
                 'v': float(cmd.linear.x),
                 'w': float(cmd.angular.z),
@@ -1541,7 +1597,20 @@ class MazeSolverNode(Node):
                 'd_der': float(z.right) if z.right_valid else None,
                 'd_lado_frontal': float(followed) if followed_valid else None,
                 'd_lado_trasera': float(rear) if rear_valid else None,
-            })))
+                # Un giro fisico de 90 real (los 3 puntos donde se decide
+                # direccion y se entra a GIRAR) -- a diferencia de tramo
+                # (que cuenta visualizador_web via /maze/estado), esto NO
+                # se pierde cuando un "giro vacio" encadena varias vueltas
+                # de 90 sin volver a pasar por AVANZAR_PARALELO entre medio
+                # (ver AVANCE_GIRO_VACIO). visualizador_web/index.html usan
+                # este contador para saber en que vertice de la ruta fija
+                # dibujada esta el carrito, sin recalcular nada.
+                'giros_fisicos': self._contador_giros_fisicos,
+            }
+            # Congelado en META (ver _on_verde) o en vivo mientras mapea --
+            # metrics_logger.py lee estos mismos campos de este topico.
+            payload.update(self._metricas_meta or self._metricas_actuales())
+            self._metrics_pub.publish(String(data=json.dumps(payload)))
 
     def _publish_event(self, tipo: str, detalle: str):
         self._event_pub.publish(String(data=json.dumps({'tipo': tipo, 'detalle': detalle})))
