@@ -1590,7 +1590,24 @@ class MazeSolverNode(Node):
         return True
 
     def _publicar_ruta(self):
-        self._ruta_json = json.dumps({'listo': True, 'fija': True})
+        """Publica el camino de celdas APROXIMADO del guion fijo (para
+        pintarlo de amarillo en web/index.html vía /maze/ruta_corta) --
+        cada distancia_m se redondea a celdas de tamano_celda_m. Es solo
+        para visualizacion: el manejo real usa las distancias/giros en
+        metros, no esta grilla."""
+        sim = RouteExplorer.from_cell_name(
+            self._ruta_celda_inicio, self._ruta_heading_inicial)
+        celdas = [sim.cell]
+        for mov in self._ruta_movimientos:
+            sim.girar(mov['giro'])
+            n_celdas = max(1, round(mov['distancia_m'] / self._tamano_celda))
+            for _ in range(n_celdas):
+                celdas.append(sim.avanzar())
+        self._ruta_json = json.dumps({
+            'listo': True,
+            'fija': True,
+            'celdas': [[int(c), int(r)] for (c, r) in celdas],
+        })
         self._ruta_pub.publish(String(data=self._ruta_json))
 
     def _republicar_ruta(self):
