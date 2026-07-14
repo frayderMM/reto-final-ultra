@@ -816,25 +816,51 @@
       // solo marca la celda, sigue la pared izquierda hasta cerrar la
       // vuelta completa. Por eso el progreso es directo desde el contador,
       // sin casos especiales para META.
-      const tramoActual = Math.max(0, Number(d.giros_fisicos) || 0);
-      const verticesListos = Math.min(tramoActual, RUTA_EXPLORACION.length - 1);
-      const celdasListas = RUTA_EXPLORACION_TRAMO_FIN[verticesListos] + 1;
       const metaVista = !!(d.verde_pos && d.verde_pos.length > 0);
 
-      // Punta = ultimo vertice YA confirmado por giros_fisicos. SIN
-      // proyeccion de d.pos, a proposito: cualquier ruido/deriva de
-      // odometria dentro del tramo en curso ya no mueve la punta ni la
-      // linea -- se queda quieta en el ultimo vertice hasta que llegue el
-      // siguiente giro real, y entonces salta (sin animacion) al proximo
-      // vertice. 100% hardcodeado, cero calculo en vivo sobre la forma.
-      const vA = RUTA_EXPLORACION[verticesListos];
-      const vB = RUTA_EXPLORACION[verticesListos + 1] || vA;
-      const puntaX = vA[0] + 0.5, puntaY = vA[1] + 0.5;
-      let rumboX = vB[0] - vA[0], rumboY = vB[1] - vA[1];
-      if (rumboX === 0 && rumboY === 0) {
-        const vPrev = RUTA_EXPLORACION[Math.max(0, verticesListos - 1)];
-        rumboX = vA[0] - vPrev[0];
-        rumboY = vA[1] - vPrev[1];
+      // MODO RUTA FIJA (fase 2: ESPERA_RUTA/SEGUIR_RUTA/META con la ruta
+      // amarilla cargada): giros_fisicos sigue sumando con los giros del
+      // guion fijo e indexaria vertices de RUTA_EXPLORACION (el camino de
+      // MAPEO, fase 1) que ya no tienen nada que ver con donde esta el
+      // carrito -- por eso el icono aparecia lejos de la linea amarilla.
+      // En este modo se usa d.pos/d.head (posicion/rumbo REALES, ya en
+      // coords de pista) en vez de la punta hardcodeada de fase 1.
+      const modoRutaFija = (
+        (d.estado === "SEGUIR_RUTA" || d.estado === "META" || d.estado === "ESPERA_RUTA") &&
+        Array.isArray(d.ruta_corta) && d.ruta_corta.length > 1
+      );
+
+      let verticesListos, celdasListas, puntaX, puntaY, rumboX, rumboY;
+      if (modoRutaFija && d.pos) {
+        verticesListos = -1;
+        celdasListas = 0;
+        puntaX = d.pos[0];
+        puntaY = d.pos[1];
+        const head = d.head || [0, -1];
+        rumboX = head[0];
+        rumboY = head[1];
+      } else {
+        const tramoActual = Math.max(0, Number(d.giros_fisicos) || 0);
+        verticesListos = Math.min(tramoActual, RUTA_EXPLORACION.length - 1);
+        celdasListas = RUTA_EXPLORACION_TRAMO_FIN[verticesListos] + 1;
+
+        // Punta = ultimo vertice YA confirmado por giros_fisicos. SIN
+        // proyeccion de d.pos, a proposito: cualquier ruido/deriva de
+        // odometria dentro del tramo en curso ya no mueve la punta ni la
+        // linea -- se queda quieta en el ultimo vertice hasta que llegue el
+        // siguiente giro real, y entonces salta (sin animacion) al proximo
+        // vertice. 100% hardcodeado, cero calculo en vivo sobre la forma.
+        const vA = RUTA_EXPLORACION[verticesListos];
+        const vB = RUTA_EXPLORACION[verticesListos + 1] || vA;
+        puntaX = vA[0] + 0.5;
+        puntaY = vA[1] + 0.5;
+        rumboX = vB[0] - vA[0];
+        rumboY = vB[1] - vA[1];
+        if (rumboX === 0 && rumboY === 0) {
+          const vPrev = RUTA_EXPLORACION[Math.max(0, verticesListos - 1)];
+          rumboX = vA[0] - vPrev[0];
+          rumboY = vA[1] - vPrev[1];
+        }
       }
 
       ctx.fillStyle = "rgba(79, 131, 255, 0.26)";
@@ -881,10 +907,11 @@
         ctx.restore();
       }
 
-      // Recorrido dibujado = ruta fija revelada por `giros_fisicos`, no la
-      // trayectoria de odometria. La linea siempre termina exactamente en
-      // la punta (puntaX,puntaY) donde se dibuja el carrito mas abajo.
-      {
+      // Recorrido dibujado (cyan) = ruta de EXPLORACION (fase 1) revelada
+      // por `giros_fisicos`. En modo ruta fija (fase 2) se omite: ya no
+      // representa nada (giros_fisicos sigue subiendo con los giros del
+      // guion fijo) y la linea amarilla + la posicion real (d.pos) alcanzan.
+      if (!modoRutaFija) {
         ctx.strokeStyle = "#00e5ff";
         ctx.lineWidth = Math.max(2, s * 0.045);
         ctx.lineCap = "round";
@@ -928,9 +955,9 @@
         ctx.restore();
       }
 
-      // El carrito va siempre en la punta del recorrido ya dibujado (no en
-      // el d.pos crudo): mismo punto (puntaX,puntaY) donde termina la linea
-      // cyan de arriba, con el rumbo del segmento conocido.
+      // El carrito se dibuja en (puntaX,puntaY): en modo exploracion es la
+      // punta del recorrido cyan (fase 1, sin usar d.pos crudo); en modo
+      // ruta fija (fase 2) es d.pos/d.head real (ver modoRutaFija arriba).
       {
         const px = tx(puntaX);
         const py = ty(puntaY);
